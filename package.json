@@ -1,0 +1,12 @@
+{
+  "name": "portfolio-tracker",
+  "version": "1.0.0",
+  "description": "实时持仓损益追踪器",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
