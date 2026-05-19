@@ -13,9 +13,11 @@ const crypto = require('crypto');
 const PORT      = parseInt(process.env.PORT || '8888', 10);
 const PASSWORD  = process.env.APP_PASSWORD || '';
 
-// Railway 挂载 Volume 时会自动设置 RAILWAY_VOLUME_MOUNT_PATH
-const DATA_DIR  = process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
-const DATA_FILE = path.join(DATA_DIR, 'portfolio_data.json');
+// DATA_FILE 可通过环境变量指定；Railway Volume 挂到 /data 时设 DATA_FILE=/data/portfolio_data.json
+const DATA_FILE = process.env.DATA_FILE
+  || (process.env.RAILWAY_VOLUME_MOUNT_PATH
+      ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'portfolio_data.json')
+      : path.join(__dirname, 'portfolio_data.json'));
 
 // ── 数据存取 ──────────────────────────────────────────────
 function loadData() {

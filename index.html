@@ -101,11 +101,13 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .hs-lbl{color:var(--text2);font-size:10px;margin-bottom:2px}
 .hs-val{font-size:14px;font-weight:700}
 .trade-list{max-height:300px;overflow-y:auto}
-.trade-row{display:grid;grid-template-columns:80px 50px 70px 80px 90px 28px;gap:4px;padding:7px 8px;border-top:1px solid var(--border);align-items:center;font-size:12px}
+.trade-row{display:grid;grid-template-columns:80px 50px 70px 80px 90px 26px 26px;gap:4px;padding:7px 8px;border-top:1px solid var(--border);align-items:center;font-size:12px}
 .trade-row:first-child{border-top:none}
-.trade-hdr{color:var(--text2);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:0;display:grid;grid-template-columns:80px 50px 70px 80px 90px 28px;gap:4px;padding:5px 8px}
+.trade-hdr{color:var(--text2);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:0;display:grid;grid-template-columns:80px 50px 70px 80px 90px 26px 26px;gap:4px;padding:5px 8px}
 .trade-del{background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;text-align:center}
 .trade-del:hover{color:var(--red)}
+.trade-edit{background:none;border:none;color:var(--text2);cursor:pointer;font-size:12px;text-align:center}
+.trade-edit:hover{color:var(--blue)}
 /* confirm */
 .conf-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}
 .conf{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:300px;width:100%;text-align:center}
@@ -144,26 +146,26 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   </div>
 </div>
 
-<!-- Add Position Modal (first buy of a new stock) -->
+<!-- Add / Edit Position Modal -->
 <div class="modal-bg" id="posMdl" style="display:none">
   <div class="modal">
-    <h2>&#128200; 新增持仓（首次买入）</h2>
+    <h2 id="posMdlTitle">&#128200; 新增持仓（首次买入）</h2>
     <div class="fg">
       <label class="fl">股票 / 证券代码</label>
       <input id="iSym" class="fi" placeholder="如: AAPL / 600519.SS / 0700.HK" oninput="this.value=this.value.toUpperCase()">
       <div class="fhint">沪A：600519.SS &nbsp;·&nbsp; 深A：000858.SZ &nbsp;·&nbsp; 港股：0700.HK &nbsp;·&nbsp; 美股：AAPL</div>
     </div>
-    <div class="frow">
-      <div class="fg"><label class="fl">买入数量</label><input id="iShares" class="fi" type="number" placeholder="100" min="0" step="any"></div>
-      <div class="fg"><label class="fl">买入价格（每股）</label><input id="iCost" class="fi" type="number" placeholder="150.00" min="0" step="any"></div>
-    </div>
-    <div class="frow">
+    <div id="posMdlBuyFields">
+      <div class="frow">
+        <div class="fg"><label class="fl">买入数量</label><input id="iShares" class="fi" type="number" placeholder="100" min="0" step="any"></div>
+        <div class="fg"><label class="fl">买入价格（每股）</label><input id="iCost" class="fi" type="number" placeholder="150.00" min="0" step="any"></div>
+      </div>
       <div class="fg"><label class="fl">交易日期</label><input id="iDate" class="fi" type="date"></div>
-      <div class="fg"><label class="fl">备注（可选）</label><input id="iNote" class="fi" placeholder="如：第一批"></div>
     </div>
+    <div class="fg"><label class="fl">备注（可选）</label><input id="iNote" class="fi" placeholder="如：第一批"></div>
     <div class="ma">
       <button class="btn-sec" onclick="closeModal('posMdl')">取消</button>
-      <button class="btn-pri green" onclick="saveNewPos()">&#9650; 确认买入</button>
+      <button class="btn-pri green" id="posMdlSaveBtn" onclick="saveNewPos()">&#9650; 确认买入</button>
     </div>
   </div>
 </div>
@@ -199,7 +201,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
     <div class="hist-summary" id="histSummary"></div>
     <div class="trade-hdr">
       <span>日期</span><span>操作</span><span style="text-align:right">数量</span>
-      <span style="text-align:right">价格</span><span style="text-align:right">金额</span><span></span>
+      <span style="text-align:right">价格</span><span style="text-align:right">金额</span><span></span><span></span>
     </div>
     <div class="trade-list" id="tradeList"></div>
     <div class="ma" style="margin-top:10px">
@@ -225,9 +227,11 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <script>
 // ===== State =====
 var portfolio={accounts:[]}, prices={};
-var tradeCtx=null; // {accId,posId,type}
-var histCtx=null;  // {accId,posId}
-var posCtx=null;   // accId for new position
+var tradeCtx=null;    // {accId,posId,editId?}
+var histCtx=null;     // {accId,posId}
+var posCtx=null;      // accId for new position
+var posEditCtx=null;  // {accId,posId} for edit, or null for new
+var tradeEditMode=false;
 var confCb=null;
 var timer=null, cd=30;
 var INTERVAL=30;
@@ -426,6 +430,7 @@ function buildAcc(acc){
       +'<button class="ico-btn buy" onclick="openTrade(\''+aid+'\',\''+pid+'\',\'buy\')">&#9650;买</button> '
       +(shares>0?'<button class="ico-btn sell" onclick="openTrade(\''+aid+'\',\''+pid+'\',\'sell\')">&#9660;卖</button> ':'')
       +'<button class="ico-btn" onclick="openHist(\''+aid+'\',\''+pid+'\')">&#128203;</button> '
+      +'<button class="ico-btn" onclick="openEditPos(\''+aid+'\',\''+pid+'\')">&#9998;</button> '
       +'<button class="ico-btn del" onclick="askDelPos(\''+aid+'\',\''+pid+'\',\''+psym+'\')">&#10006;</button>'
       +'</td></tr>';
 
@@ -449,6 +454,7 @@ function buildAcc(acc){
       +'<button class="ico-btn buy" onclick="openTrade(\''+aid+'\',\''+pid+'\',\'buy\')">&#9650; 买入</button>'
       +(shares>0?'<button class="ico-btn sell" onclick="openTrade(\''+aid+'\',\''+pid+'\',\'sell\')">&#9660; 卖出</button>':'')
       +'<button class="ico-btn" onclick="openHist(\''+aid+'\',\''+pid+'\')">&#128203; 记录</button>'
+      +'<button class="ico-btn" onclick="openEditPos(\''+aid+'\',\''+pid+'\')">&#9998; 编辑</button>'
       +'<button class="ico-btn del" onclick="askDelPos(\''+aid+'\',\''+pid+'\',\''+psym+'\')">&#10006; 删除</button>'
       +'</div></div>';
     return {dr:dr,mc:mc};
@@ -486,27 +492,54 @@ function askDelAcc(id,name){showConf('删除账户','确定删除「'+name+'」�
 
 // ===== New position (first buy) =====
 function openNewPos(accId){
-  posCtx=accId;
+  posCtx=accId; posEditCtx=null;
   document.getElementById('iSym').value='';
   document.getElementById('iShares').value='';
   document.getElementById('iCost').value='';
   document.getElementById('iNote').value='';
   document.getElementById('iDate').value=today();
   document.getElementById('iSym').readOnly=false;
+  document.getElementById('posMdlTitle').innerHTML='&#128200; 新增持仓（首次买入）';
+  document.getElementById('posMdlBuyFields').style.display='';
+  document.getElementById('posMdlSaveBtn').innerHTML='&#9650; 确认买入';
+  document.getElementById('posMdlSaveBtn').className='btn-pri green';
+  document.getElementById('posMdl').style.display='flex';
+  setTimeout(function(){document.getElementById('iSym').focus();},80);
+}
+function openEditPos(accId,posId){
+  var pos=findPos(accId,posId); if(!pos)return;
+  posCtx=accId; posEditCtx={accId:accId,posId:posId};
+  document.getElementById('iSym').value=pos.symbol;
+  document.getElementById('iNote').value=pos.note||'';
+  document.getElementById('iSym').readOnly=false;
+  document.getElementById('posMdlTitle').innerHTML='&#9998; 编辑持仓信息';
+  document.getElementById('posMdlBuyFields').style.display='none';
+  document.getElementById('posMdlSaveBtn').innerHTML='保存修改';
+  document.getElementById('posMdlSaveBtn').className='btn-pri';
   document.getElementById('posMdl').style.display='flex';
   setTimeout(function(){document.getElementById('iSym').focus();},80);
 }
 function saveNewPos(){
   var sym=document.getElementById('iSym').value.trim().toUpperCase();
+  var note=document.getElementById('iNote').value.trim();
+  if(!sym){toast('请输入代码');return;}
+  if(posEditCtx){
+    // Edit mode: update symbol and note only
+    var pos=findPos(posEditCtx.accId,posEditCtx.posId); if(!pos)return;
+    var acc=findAcc(posEditCtx.accId);
+    if(acc&&sym!==pos.symbol&&acc.positions.find(function(p){return p.symbol===sym&&p.id!==pos.id;})){toast('该账户已有此标的');return;}
+    pos.symbol=sym; pos.note=note;
+    closeModal('posMdl');
+    savePF().then(function(){return refreshPrices();});
+    return;
+  }
+  // New position mode
   var shares=parseFloat(document.getElementById('iShares').value);
   var price=parseFloat(document.getElementById('iCost').value);
   var date=document.getElementById('iDate').value||today();
-  var note=document.getElementById('iNote').value.trim();
-  if(!sym){toast('请输入代码');return;}
   if(!shares||shares<=0){toast('数量无效');return;}
   if(!price||price<0){toast('价格无效');return;}
-  var acc=findAcc(posCtx);
-  if(!acc)return;
+  var acc=findAcc(posCtx); if(!acc)return;
   if(acc.positions.find(function(p){return p.symbol===sym;})){toast('该账户已有此标的，请在持仓行点击「买入」');return;}
   acc.positions.push({id:gid(),symbol:sym,note:note,trades:[{id:gid(),type:'buy',shares:shares,price:price,date:date}]});
   closeModal('posMdl');
@@ -516,7 +549,7 @@ function saveNewPos(){
 // ===== Buy/Sell trade =====
 var currentTradeType='buy';
 function openTrade(accId,posId,type){
-  tradeCtx={accId:accId,posId:posId};
+  tradeCtx={accId:accId,posId:posId}; tradeEditMode=false;
   setTradeType(type);
   document.getElementById('tShares').value='';
   document.getElementById('tPrice').value='';
@@ -525,6 +558,20 @@ function openTrade(accId,posId,type){
   document.getElementById('tradeMdl').style.display='flex';
   setTimeout(function(){document.getElementById('tShares').focus();},80);
 }
+function openEditTrade(accId,posId,tradeId){
+  var pos=findPos(accId,posId); if(!pos)return;
+  var trade=pos.trades.find(function(t){return t.id===tradeId;}); if(!trade)return;
+  tradeCtx={accId:accId,posId:posId,editId:tradeId}; tradeEditMode=true;
+  setTradeType(trade.type);
+  document.getElementById('tShares').value=trade.shares;
+  document.getElementById('tPrice').value=trade.price;
+  document.getElementById('tDate').value=trade.date;
+  document.getElementById('tradeMdlTitle').textContent='编辑交易记录';
+  document.getElementById('tradeConfirmBtn').innerHTML='保存修改';
+  document.getElementById('tradeConfirmBtn').className='btn-pri';
+  calcTradeTotal();
+  document.getElementById('tradeMdl').style.display='flex';
+}
 function setTradeType(type){
   currentTradeType=type;
   var buy=document.getElementById('typeBuy');
@@ -532,9 +579,11 @@ function setTradeType(type){
   var btn=document.getElementById('tradeConfirmBtn');
   buy.className='type-btn'+(type==='buy'?' active-buy':'');
   sell.className='type-btn'+(type==='sell'?' active-sell':'');
-  if(type==='buy'){btn.className='btn-pri green';btn.textContent='&#9650; 确认买入';}
-  else{btn.className='btn-pri red';btn.textContent='&#9660; 确认卖出';}
-  document.getElementById('tradeMdlTitle').textContent=type==='buy'?'&#9650; 买入':'&#9660; 卖出';
+  if(!tradeEditMode){
+    if(type==='buy'){btn.className='btn-pri green';btn.innerHTML='&#9650; 确认买入';}
+    else{btn.className='btn-pri red';btn.innerHTML='&#9660; 确认卖出';}
+    document.getElementById('tradeMdlTitle').textContent=type==='buy'?'买入':'卖出';
+  }
   calcTradeTotal();
 }
 function calcTradeTotal(){
@@ -554,16 +603,26 @@ function saveTrade(){
   var date=document.getElementById('tDate').value||today();
   if(!shares||shares<=0){toast('数量无效');return;}
   if(!price||price<0){toast('价格无效');return;}
-  var pos=findPos(tradeCtx.accId,tradeCtx.posId);
-  if(!pos)return;
-  // Check sell doesn't exceed holdings
-  if(currentTradeType==='sell'){
-    var calc=calcPos(pos.trades);
-    if(shares>calc.shares){toast('卖出数量超过持有数量 ('+fmtN(calc.shares,true)+')');return;}
+  var pos=findPos(tradeCtx.accId,tradeCtx.posId); if(!pos)return;
+  if(tradeCtx.editId){
+    // Edit existing trade
+    var trade=pos.trades.find(function(t){return t.id===tradeCtx.editId;});
+    if(trade){trade.type=currentTradeType;trade.shares=shares;trade.price=price;trade.date=date;}
+  } else {
+    // Check sell doesn't exceed holdings
+    if(currentTradeType==='sell'){
+      var calc=calcPos(pos.trades);
+      if(shares>calc.shares){toast('卖出数量超过持有数量 ('+fmtN(calc.shares,true)+')');return;}
+    }
+    pos.trades.push({id:gid(),type:currentTradeType,shares:shares,price:price,date:date});
   }
-  pos.trades.push({id:gid(),type:currentTradeType,shares:shares,price:price,date:date});
+  tradeEditMode=false;
   closeModal('tradeMdl');
-  savePF().then(function(){return refreshPrices();});
+  savePF().then(function(){
+    render();
+    if(histCtx&&document.getElementById('histMdl').style.display!=='none')renderHist();
+    return refreshPrices();
+  });
 }
 
 // ===== Trade history =====
@@ -595,10 +654,11 @@ function renderHist(){
     var isBuy=t.type==='buy';
     return '<div class="trade-row">'
       +'<span>'+t.date+'</span>'
-      +'<span style="color:'+(isBuy?'var(--green)':'var(--red)');+'font-weight:600">'+(isBuy?'&#9650;买入':'&#9660;卖出')+'</span>'
+      +'<span style="color:'+(isBuy?'var(--green)':'var(--red)')+';font-weight:600">'+(isBuy?'&#9650;买入':'&#9660;卖出')+'</span>'
       +'<span style="text-align:right">'+fmtN(t.shares,true)+'</span>'
       +'<span style="text-align:right">'+cs+fmtN(t.price)+'</span>'
       +'<span style="text-align:right;color:'+(isBuy?'var(--red)':'var(--green)')+'">'+( isBuy?'-':'+' )+cs+fmtN(total)+'</span>'
+      +'<button class="trade-edit" onclick="openEditTrade(\''+histCtx.accId+'\',\''+histCtx.posId+'\',\''+t.id+'\')">&#9998;</button>'
       +'<button class="trade-del" onclick="askDelTrade(\''+histCtx.accId+'\',\''+histCtx.posId+'\',\''+t.id+'\')">&#10006;</button>'
       +'</div>';
   }).join('');
