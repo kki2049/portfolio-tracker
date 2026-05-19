@@ -684,7 +684,7 @@ function showConf(title,msg,cb){
   document.getElementById('confTitle').textContent=title;
   document.getElementById('confMsg').textContent=msg;
   confCb=cb;
-  document.getElementById('confOk').onclick=function(){closeConf();if(confCb)confCb();};
+  document.getElementById('confOk').onclick=function(){var fn=confCb;closeConf();if(fn)fn();};
   document.getElementById('confBg').style.display='flex';
 }
 function closeConf(){document.getElementById('confBg').style.display='none';confCb=null;}
