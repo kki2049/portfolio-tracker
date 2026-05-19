@@ -43,7 +43,7 @@ function checkAuth(req, res) {
     if (pass === PASSWORD) return true;
   }
   res.writeHead(401, {
-    'WWW-Authenticate': 'Basic realm="持仓损益追踪器，请输入访问密码"',
+    'WWW-Authenticate': 'Basic realm="Portfolio Tracker"',
     'Content-Type': 'text/plain; charset=utf-8',
   });
   res.end('请输入密码后访问');
