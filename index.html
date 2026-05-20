@@ -508,7 +508,7 @@ function render() {
   renderThemeBar(enriched);
   renderGrid(enriched, totalVal);
   renderTable(enriched, totalVal);
-  renderCharts(enriched, totalVal);
+  try { renderCharts(enriched, totalVal); } catch(e) { console.warn('图表渲染失败:', e); }
 }
 
 function renderStats(totalVal, totalCost, totalPnl, totalPnlPct, mRet, count, snap) {
