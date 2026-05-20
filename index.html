@@ -571,7 +571,7 @@ function renderGrid(enriched, totalVal) {
         <div class="hcard-detail"><b>${p.shares.toLocaleString()}</b>股 · 成本<b>¥${p.avgCost}</b>${p.note?` · ${p.note}`:''}</div>
         <div class="hcard-acts">
           <button class="btn btn-ghost btn-sm" onclick="openEdit('${p.id}')">编辑</button>
-          <button class="btn btn-del btn-sm" onclick="askDel('${p.id}','${p.name.replace(/'/g,'\\'')}')">删</button>
+          <button class="btn btn-del btn-sm" onclick="askDel('${p.id}')">删</button>
         </div>
       </div>
     </div>`;
@@ -599,7 +599,7 @@ function renderTable(enriched, totalVal) {
       <td style="color:var(--muted)">${wtPct}%</td>
       <td style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="openEdit('${p.id}')">编辑</button>
-        <button class="btn btn-del btn-sm" style="margin-left:3px" onclick="askDel('${p.id}','${p.name.replace(/'/g,'\\'')}')">删除</button>
+        <button class="btn btn-del btn-sm" style="margin-left:3px" onclick="askDel('${p.id}')">删除</button>
       </td>
     </tr>`;
   }).join('');
@@ -739,7 +739,10 @@ async function savePos() {
 }
 
 // ─── 删除 ───
-function askDel(id, name) {
+function askDel(id) {
+  const md = getMonthData(currentMonth);
+  const p = (md.positions||[]).find(x=>x.id===id);
+  const name = p ? p.name : '该持仓';
   deletingId = id;
   document.getElementById('delMsg').textContent = `确定要删除「${name}」的 ${ymLabel(currentMonth)} 持仓记录？`;
   document.getElementById('delOverlay').classList.add('show');
