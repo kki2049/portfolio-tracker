@@ -891,24 +891,38 @@ function setMkt(btn) {
   document.getElementById('f-name').value='';
 }
 
+let _codeTimer = null;
 function onCodeInput() {
-  if (modalMkt !== 'A') return;
   const code = document.getElementById('f-code').value.trim();
-  const nameEl = document.getElementById('f-name');
-  if (CNAMES[code] && !nameEl.value) nameEl.value = CNAMES[code];
+  if (modalMkt === 'A') {
+    // 本地表优先
+    const nameEl = document.getElementById('f-name');
+    if (CNAMES[code] && !nameEl.value) nameEl.value = CNAMES[code];
+    // 6位完整代码时走API补全行业
+    clearTimeout(_codeTimer);
+    if (code.length === 6) _codeTimer = setTimeout(() => fetchAndFill(code, 'A'), 500);
+  }
 }
 
 async function onCodeBlur() {
-  if (modalMkt === 'A') return;
   const code = document.getElementById('f-code').value.trim();
   if (!code) return;
-  const nameEl = document.getElementById('f-name');
-  if (nameEl.value) return;
-  const sym = modalMkt==='HK' ? code.padStart(4,'0')+'.HK' : code.toUpperCase();
+  clearTimeout(_codeTimer);
+  await fetchAndFill(code, modalMkt);
+}
+
+async function fetchAndFill(code, market) {
   try {
-    const r = await fetch('/api/prices?symbols='+encodeURIComponent(sym));
-    const d = (await r.json())[sym];
-    if (d && d.name && d.name !== sym && !d.error) nameEl.value = d.name;
+    const r = await fetch('/api/stock-info?code='+encodeURIComponent(code)+'&market='+market);
+    const d = await r.json();
+    if (d.name) {
+      const el = document.getElementById('f-name');
+      if (!el.value) el.value = d.name;
+    }
+    if (d.industry) {
+      const el = document.getElementById('f-theme');
+      if (!el.value) el.value = d.industry;
+    }
   } catch {}
 }
 

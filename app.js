@@ -110,6 +110,25 @@ function fetchPrices(symbols) {
   });
 }
 
+// ── 通用 JSON 抓取 ────────────────────────────────────────
+function fetchJson(reqUrl) {
+  return new Promise(function(resolve, reject) {
+    const opts = {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'application/json' },
+      timeout: 8000,
+    };
+    const req = https.get(reqUrl, opts, function(res) {
+      let buf = '';
+      res.on('data', function(d) { buf += d; });
+      res.on('end', function() {
+        try { resolve(JSON.parse(buf)); } catch(e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', function() { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
 // ── 工具 ─────────────────────────────────────────────────
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -162,6 +181,37 @@ const server = http.createServer(async function(req, res) {
     const result = await fetchPrices(syms);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(result));
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/stock-info') {
+    const code   = (parsed.query.code   || '').trim();
+    const market = (parsed.query.market || 'A').trim();
+    var info = { name: null, industry: null };
+    try {
+      if (market === 'A' && code) {
+        var mktCode = (code.startsWith('6') || code.startsWith('5')) ? 1 : 0;
+        var emUrl = 'https://push2.eastmoney.com/api/qt/stock/get?secid=' + mktCode + '.' + code +
+          '&fields=f14,f58&ut=bd1d9ddb04089700cf9c27f6f7426281';
+        var emData = await fetchJson(emUrl);
+        if (emData && emData.data) {
+          info.name     = emData.data.f14 || null;
+          info.industry = emData.data.f58 || null;
+        }
+      } else if ((market === 'HK' || market === 'US') && code) {
+        var sym = market === 'HK' ? code.padStart(4, '0') + '.HK' : code.toUpperCase();
+        var yfUrl = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/' +
+          encodeURIComponent(sym) + '?modules=assetProfile,quoteType';
+        var yfData = await fetchJson(yfUrl);
+        var r0 = yfData && yfData.quoteSummary && yfData.quoteSummary.result && yfData.quoteSummary.result[0];
+        if (r0) {
+          info.name = (r0.quoteType && (r0.quoteType.longName || r0.quoteType.shortName)) || null;
+          info.industry = (r0.assetProfile && (r0.assetProfile.industry || r0.assetProfile.sector)) || null;
+        }
+      }
+    } catch(e) { /* silently fail */ }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(info));
     return;
   }
 
