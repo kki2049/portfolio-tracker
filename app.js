@@ -189,29 +189,81 @@ const server = http.createServer(async function(req, res) {
     const market = (parsed.query.market || 'A').trim();
     var info = { name: null, industry: null };
     try {
-      if (market === 'A' && code) {
-        var mktCode = (code.startsWith('6') || code.startsWith('5')) ? 1 : 0;
-        var emUrl = 'https://push2.eastmoney.com/api/qt/stock/get?secid=' + mktCode + '.' + code +
-          '&fields=f14,f58&ut=bd1d9ddb04089700cf9c27f6f7426281';
-        var emData = await fetchJson(emUrl);
-        if (emData && emData.data) {
-          info.name     = emData.data.f14 || null;
-          info.industry = emData.data.f58 || null;
-        }
-      } else if ((market === 'HK' || market === 'US') && code) {
-        var sym = market === 'HK' ? code.padStart(4, '0') + '.HK' : code.toUpperCase();
-        var yfUrl = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/' +
-          encodeURIComponent(sym) + '?modules=assetProfile,quoteType';
-        var yfData = await fetchJson(yfUrl);
-        var r0 = yfData && yfData.quoteSummary && yfData.quoteSummary.result && yfData.quoteSummary.result[0];
-        if (r0) {
-          info.name = (r0.quoteType && (r0.quoteType.longName || r0.quoteType.shortName)) || null;
-          info.industry = (r0.assetProfile && (r0.assetProfile.industry || r0.assetProfile.sector)) || null;
-        }
+      // 统一走 Yahoo Finance（可从 Railway 美国服务器访问）
+      var yfSym;
+      if (market === 'A') {
+        var suffix = (code.startsWith('6') || code.startsWith('5')) ? '.SS' : '.SZ';
+        yfSym = code + suffix;
+      } else if (market === 'HK') {
+        yfSym = code.padStart(4, '0') + '.HK';
+      } else {
+        yfSym = code.toUpperCase();
+      }
+      var yfUrl = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/' +
+        encodeURIComponent(yfSym) + '?modules=assetProfile,quoteType';
+      var yfData = await fetchJson(yfUrl);
+      var r0 = yfData && yfData.quoteSummary && yfData.quoteSummary.result && yfData.quoteSummary.result[0];
+      if (r0) {
+        info.name     = (r0.quoteType && (r0.quoteType.longName || r0.quoteType.shortName)) || null;
+        info.industry = (r0.assetProfile && (r0.assetProfile.industry || r0.assetProfile.sector)) || null;
       }
     } catch(e) { /* silently fail */ }
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(info));
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/parse-screenshot') {
+    const apiKey = process.env.ANTHROPIC_API_KEY || '';
+    if (!apiKey) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: '请在 Railway 环境变量中设置 ANTHROPIC_API_KEY' }));
+      return;
+    }
+    let body = '';
+    req.on('data', function(d) { body += d; });
+    req.on('end', async function() {
+      try {
+        const { image, mediaType } = JSON.parse(body);
+        const claudeBody = JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } },
+              { type: 'text', text: '请从这张券商持仓截图中提取所有股票持仓信息，返回JSON数组，每项格式：{"code":"代码","name":"名称","shares":持股数量,"cost":成本均价,"market":"A或HK或US"}。A股代码6位数字，港股4位数字，美股英文字母。shares和cost必须是数字。只返回JSON数组，不要其他文字。' }
+            ]
+          }]
+        });
+        const result = await new Promise(function(resolve, reject) {
+          const opts = {
+            hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+              'Content-Length': Buffer.byteLength(claudeBody)
+            }
+          };
+          const r = https.request(opts, function(rs) {
+            let buf = '';
+            rs.on('data', function(d) { buf += d; });
+            rs.on('end', function() { try { resolve(JSON.parse(buf)); } catch(e) { reject(e); } });
+          });
+          r.on('error', reject);
+          r.write(claudeBody); r.end();
+        });
+        const text = (result.content && result.content[0] && result.content[0].text) || '[]';
+        const match = text.match(/\[[\s\S]*\]/);
+        const positions = match ? JSON.parse(match[0]) : [];
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ positions }));
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
     return;
   }
 
