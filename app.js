@@ -45,11 +45,56 @@ function getSessions() {
 }
 function saveSessions(s) { writeJson('sessions.json', s); }
 
+// ── 加密（AES-256-GCM）────────────────────────────────────────
+// 密钥存在 .secret 文件里，每次部署固定，用户数据用各自 userId 派生子密钥
+function getEncSecret() {
+  if (process.env.ENCRYPTION_SECRET) return process.env.ENCRYPTION_SECRET;
+  const f = path.join(DATA_DIR, '.secret');
+  try {
+    if (fs.existsSync(f)) return fs.readFileSync(f, 'utf8').trim();
+    const s = crypto.randomBytes(32).toString('hex');
+    ensureDir();
+    fs.writeFileSync(f, s, 'utf8');
+    return s;
+  } catch { return 'fallback-please-set-ENCRYPTION_SECRET'; }
+}
+function encKey(userId) {
+  return crypto.createHash('sha256').update(getEncSecret() + userId).digest();
+}
+function encryptPortfolio(data, userId) {
+  const iv  = crypto.randomBytes(12);
+  const c   = crypto.createCipheriv('aes-256-gcm', encKey(userId), iv);
+  const enc = Buffer.concat([c.update(JSON.stringify(data), 'utf8'), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), enc]).toString('base64');
+}
+function decryptPortfolio(b64, userId) {
+  const buf = Buffer.from(b64, 'base64');
+  const iv  = buf.slice(0, 12);
+  const tag = buf.slice(12, 28);
+  const enc = buf.slice(28);
+  const d   = crypto.createDecipheriv('aes-256-gcm', encKey(userId), iv);
+  d.setAuthTag(tag);
+  return JSON.parse(Buffer.concat([d.update(enc), d.final()]).toString('utf8'));
+}
+
 function getUserData(userId) {
-  return readJson('portfolio_' + userId + '.json', { v:3, positions:[], snapshots:{}, customThemes:[] });
+  try {
+    const enc = path.join(DATA_DIR, 'portfolio_' + userId + '.enc');
+    if (fs.existsSync(enc)) return decryptPortfolio(fs.readFileSync(enc, 'utf8').trim(), userId);
+    // 兼容旧版未加密文件，读取后迁移
+    const old = path.join(DATA_DIR, 'portfolio_' + userId + '.json');
+    if (fs.existsSync(old)) {
+      const data = JSON.parse(fs.readFileSync(old, 'utf8'));
+      saveUserData(userId, data);
+      fs.unlinkSync(old);
+      return data;
+    }
+  } catch {}
+  return { v:3, positions:[], snapshots:{}, customThemes:[] };
 }
 function saveUserData(userId, data) {
-  writeJson('portfolio_' + userId + '.json', data);
+  ensureDir();
+  fs.writeFileSync(path.join(DATA_DIR, 'portfolio_' + userId + '.enc'), encryptPortfolio(data, userId), 'utf8');
 }
 
 // ── 首次启动：生成管理员邀请码 ───────────────────────────────
