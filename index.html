@@ -152,6 +152,31 @@ input[list]{cursor:text}
 th.sortable{cursor:pointer;user-select:none}
 th.sortable:hover{color:var(--text)}
 
+/* Auth overlay */
+.auth-overlay{display:none;position:fixed;inset:0;background:var(--bg);z-index:9000;align-items:center;justify-content:center;padding:20px}
+.auth-overlay.show{display:flex}
+.auth-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:30px;width:100%;max-width:380px}
+.auth-logo{width:52px;height:52px;background:linear-gradient(135deg,#1f6feb,#58a6ff);border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;margin:0 auto 14px}
+.auth-title{font-size:20px;font-weight:700;text-align:center;margin-bottom:4px}
+.auth-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:22px}
+.auth-tabs{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:20px}
+.auth-tab{flex:1;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;padding:9px;transition:.15s}
+.auth-tab.active{background:var(--accent);color:#fff}
+.auth-fg{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.auth-fg label{font-size:11px;color:var(--muted)}
+.auth-fg input{background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:9px 12px;font-size:14px;outline:none;width:100%;transition:.15s;font-family:inherit}
+.auth-fg input:focus{border-color:var(--accent)}
+.auth-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:7px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;margin-top:4px;transition:.15s}
+.auth-btn:hover{background:#388bfd}
+.auth-err{color:var(--red);font-size:12px;min-height:18px;margin-top:8px;text-align:center}
+/* User chip */
+.user-chip{display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:5px 11px;font-size:12px}
+.user-chip-name{color:var(--text);font-weight:600}
+.user-chip-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0;transition:.15s}
+.user-chip-btn:hover{color:var(--red)}
+.user-chip-admin{color:var(--yellow)!important}
+.user-chip-admin:hover{color:var(--orange)!important}
+
 @media(max-width:680px){
   .chart-row{grid-template-columns:1fr}
   .cc.full{grid-column:1}
@@ -162,6 +187,47 @@ th.sortable:hover{color:var(--text)}
 </style>
 </head>
 <body>
+<!-- Auth overlay -->
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-box">
+    <div class="auth-logo">我</div>
+    <div class="auth-title">持仓追踪</div>
+    <div class="auth-sub">个人投资组合管理系统</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="authTabLogin" onclick="authSwitchTab('login')">登录</button>
+      <button class="auth-tab" id="authTabReg" onclick="authSwitchTab('register')">注册</button>
+    </div>
+    <div id="authLoginForm">
+      <div class="auth-fg"><label>用户名</label><input id="al-user" placeholder="输入用户名" autocomplete="username"/></div>
+      <div class="auth-fg"><label>密码</label><input id="al-pass" type="password" placeholder="输入密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+      <button class="auth-btn" onclick="doLogin()">登录</button>
+    </div>
+    <div id="authRegForm" style="display:none">
+      <div class="auth-fg"><label>邀请码</label><input id="ar-code" placeholder="请输入邀请码" autocomplete="off" oninput="this.value=this.value.toUpperCase()"/></div>
+      <div class="auth-fg"><label>用户名</label><input id="ar-user" placeholder="2-20 个字符" autocomplete="username"/></div>
+      <div class="auth-fg"><label>密码</label><input id="ar-pass" type="password" placeholder="至少 6 位" autocomplete="new-password" onkeydown="if(event.key==='Enter')doRegister()"/></div>
+      <button class="auth-btn" onclick="doRegister()">注册</button>
+    </div>
+    <div class="auth-err" id="authErr"></div>
+  </div>
+</div>
+
+<!-- Admin overlay -->
+<div class="overlay" id="adminOverlay">
+  <div class="modal" style="max-width:420px">
+    <h2>管理员面板</h2>
+    <div class="modal-sub">生成邀请码后发送给用户</div>
+    <div id="adminUserList" style="margin-bottom:16px;font-size:12px;max-height:180px;overflow-y:auto"></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="genInvite()">生成邀请码</button>
+      <span id="inviteResult" style="font-family:monospace;font-size:15px;font-weight:700;color:var(--green);letter-spacing:2px"></span>
+    </div>
+    <div class="mbtns" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="document.getElementById('adminOverlay').classList.remove('show')">关闭</button>
+    </div>
+  </div>
+</div>
+
 <div id="pbar"></div>
 
 <div class="hd">
@@ -181,6 +247,11 @@ th.sortable:hover{color:var(--text)}
     </div>
     <button class="btn btn-snap" onclick="saveSnapshot()">📌 存快照</button>
     <button class="btn btn-primary" onclick="openAdd()">+ 添加持仓</button>
+    <div class="user-chip" id="userChip" style="display:none">
+      <span class="user-chip-name" id="userChipName"></span>
+      <button class="user-chip-btn user-chip-admin" id="adminBtn" onclick="openAdmin()" title="管理员" style="display:none">⚙</button>
+      <button class="user-chip-btn" onclick="doLogout()" title="退出登录">退出</button>
+    </div>
   </div>
 </div>
 
@@ -313,6 +384,112 @@ th.sortable:hover{color:var(--text)}
 <div class="toast" id="toast"></div>
 
 <script>
+// ─── Auth ──────────────────────────────────────────────────
+function getToken()        { return localStorage.getItem('auth_token') || ''; }
+function setToken(t)       { localStorage.setItem('auth_token', t); }
+function clearToken()      { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); localStorage.removeItem('auth_admin'); }
+function getStoredUser()   { return localStorage.getItem('auth_user') || ''; }
+function setStoredUser(u, admin) { localStorage.setItem('auth_user', u); localStorage.setItem('auth_admin', admin ? '1' : ''); }
+function isStoredAdmin()   { return !!localStorage.getItem('auth_admin'); }
+
+function authFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['Authorization'] = 'Bearer ' + getToken();
+  return fetch(url, opts).then(function(r) {
+    if (r.status === 401) { clearToken(); showAuth(); throw new Error('unauthorized'); }
+    return r;
+  });
+}
+
+function showAuth() {
+  document.getElementById('authOverlay').classList.add('show');
+  document.getElementById('userChip').style.display = 'none';
+}
+
+function hideAuth(username, isAdmin) {
+  document.getElementById('authOverlay').classList.remove('show');
+  document.getElementById('userChip').style.display = '';
+  document.getElementById('userChipName').textContent = username;
+  document.getElementById('adminBtn').style.display = isAdmin ? '' : 'none';
+}
+
+function authSwitchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('authTabLogin').classList.toggle('active', isLogin);
+  document.getElementById('authTabReg').classList.toggle('active', !isLogin);
+  document.getElementById('authLoginForm').style.display = isLogin ? '' : 'none';
+  document.getElementById('authRegForm').style.display = isLogin ? 'none' : '';
+  document.getElementById('authErr').textContent = '';
+}
+
+async function doLogin() {
+  const username = document.getElementById('al-user').value.trim();
+  const password = document.getElementById('al-pass').value;
+  document.getElementById('authErr').textContent = '';
+  if (!username || !password) { document.getElementById('authErr').textContent = '请填写用户名和密码'; return; }
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const d = await r.json();
+    if (!r.ok) { document.getElementById('authErr').textContent = d.error || '登录失败'; return; }
+    setToken(d.token);
+    setStoredUser(d.username, d.isAdmin);
+    hideAuth(d.username, d.isAdmin);
+    await init();
+  } catch(e) { document.getElementById('authErr').textContent = '网络错误：' + e.message; }
+}
+
+async function doRegister() {
+  const inviteCode = document.getElementById('ar-code').value.trim();
+  const username   = document.getElementById('ar-user').value.trim();
+  const password   = document.getElementById('ar-pass').value;
+  document.getElementById('authErr').textContent = '';
+  if (!inviteCode || !username || !password) { document.getElementById('authErr').textContent = '请填写所有字段'; return; }
+  try {
+    const r = await fetch('/api/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password, inviteCode })
+    });
+    const d = await r.json();
+    if (!r.ok) { document.getElementById('authErr').textContent = d.error || '注册失败'; return; }
+    setToken(d.token);
+    setStoredUser(d.username, d.isAdmin);
+    hideAuth(d.username, d.isAdmin);
+    await init();
+  } catch(e) { document.getElementById('authErr').textContent = '网络错误：' + e.message; }
+}
+
+async function doLogout() {
+  try { await authFetch('/api/logout', { method: 'POST' }); } catch {}
+  clearToken();
+  portfolio = { v:3, positions:[], snapshots:{}, customThemes:[] };
+  qCache = {};
+  render();
+  showAuth();
+}
+
+async function openAdmin() {
+  document.getElementById('adminOverlay').classList.add('show');
+  document.getElementById('inviteResult').textContent = '';
+  try {
+    const r = await authFetch('/api/admin/users');
+    const users = await r.json();
+    document.getElementById('adminUserList').innerHTML = '<b style="font-size:11px;color:var(--muted)">用户列表</b><br>' +
+      users.map(u => `<span style="color:${u.is_admin?'var(--yellow)':'var(--text)'}">• ${u.username}${u.is_admin?' (管理员)':''}</span>`).join('<br>');
+  } catch {}
+}
+
+async function genInvite() {
+  try {
+    const r = await authFetch('/api/admin/invite', { method: 'POST' });
+    const d = await r.json();
+    document.getElementById('inviteResult').textContent = d.code || '失败';
+  } catch(e) { document.getElementById('inviteResult').textContent = '错误'; }
+}
+
 // ─── 题材配色 ───
 const TC_BASE = {
   'PCB':'#58a6ff','液冷':'#3fb950','算力租赁/IDC':'#bc8cff',
@@ -466,17 +643,17 @@ function migrate(data) {
 // ─── API ───
 async function loadFromServer() {
   try {
-    const r = await fetch('/api/portfolio');
+    const r = await authFetch('/api/portfolio');
     portfolio = migrate(await r.json());
-  } catch(e) { toast('加载失败：' + e.message); }
+  } catch(e) { if (e.message !== 'unauthorized') toast('加载失败：' + e.message); }
 }
 async function saveToServer() {
   try {
-    await fetch('/api/portfolio', {
+    await authFetch('/api/portfolio', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(portfolio)
     });
-  } catch(e) { toast('保存失败：' + e.message); }
+  } catch(e) { if (e.message !== 'unauthorized') toast('保存失败：' + e.message); }
 }
 
 // ─── 行情 ───
@@ -505,7 +682,7 @@ async function fetchLiveA(codes) {
 async function fetchServerPrices(symbols) {
   if (!symbols.length) return {};
   try {
-    const r = await fetch('/api/prices?symbols=' + encodeURIComponent(symbols.join(',')), {cache:'no-store'});
+    const r = await authFetch('/api/prices?symbols=' + encodeURIComponent(symbols.join(',')), {cache:'no-store'});
     const data = await r.json();
     const res = {};
     Object.entries(data).forEach(([sym, d]) => {
@@ -1014,14 +1191,14 @@ async function fetchAndFill(code, market) {
       // 行业：服务器端 Yahoo Finance
       if (!themeEl.value) {
         try {
-          const r = await fetch('/api/stock-info?code='+encodeURIComponent(code)+'&market=A');
+          const r = await authFetch('/api/stock-info?code='+encodeURIComponent(code)+'&market=A');
           const d = await r.json();
           if (d.industry && !themeEl.value) themeEl.value = d.industry;
         } catch {}
       }
     } else {
       // 港股/美股：服务器端 Yahoo Finance
-      const r = await fetch('/api/stock-info?code='+encodeURIComponent(code)+'&market='+market);
+      const r = await authFetch('/api/stock-info?code='+encodeURIComponent(code)+'&market='+market);
       const d = await r.json();
       if (d.name && !nameEl.value) nameEl.value = d.name;
       if (d.industry && !themeEl.value) themeEl.value = d.industry;
@@ -1152,7 +1329,7 @@ async function doDelete(){
 // ─── 汇率 ───
 async function loadExchangeRate() {
   try {
-    const r = await fetch('/api/exchange-rate', { cache: 'no-store' });
+    const r = await authFetch('/api/exchange-rate', { cache: 'no-store' });
     const d = await r.json();
     if (d.USD > 1)   FX.USD = d.USD;
     if (d.HKD > 0.1) FX.HKD = d.HKD;
@@ -1172,7 +1349,21 @@ async function init(){
   await doRefresh();
   progress(100);
 }
-init();
+
+// 启动时检查登录状态
+(async function checkAuth() {
+  const token = getToken();
+  if (!token) { showAuth(); return; }
+  try {
+    const r = await fetch('/api/me', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) { clearToken(); showAuth(); return; }
+    const d = await r.json();
+    setStoredUser(d.username, d.isAdmin);
+    hideAuth(d.username, d.isAdmin);
+    await init();
+  } catch { showAuth(); }
+})();
+
 setInterval(doRefresh, 10*60*1000);
 setInterval(loadExchangeRate, 4*60*60*1000);
 </script>
