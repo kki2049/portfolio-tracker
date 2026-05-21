@@ -302,6 +302,31 @@ const server = http.createServer(async function(req, res) {
       inv.used_by = userId;
       saveInvites(invites);
 
+      // 管理员首次注册：自动迁移旧版 portfolio_data.json
+      if (isAdmin) {
+        const oldFile = path.join(DATA_DIR, 'portfolio_data.json');
+        try {
+          if (fs.existsSync(oldFile)) {
+            const old = JSON.parse(fs.readFileSync(oldFile, 'utf8'));
+            let positions = [];
+            // 旧格式有 accounts 数组
+            if (old.accounts) {
+              old.accounts.forEach(acc => { positions = positions.concat(acc.positions || []); });
+            } else if (old.positions) {
+              positions = old.positions;
+            }
+            if (positions.length > 0) {
+              saveUserData(userId, {
+                v: 3, positions,
+                snapshots: old.snapshots || {},
+                customThemes: old.customThemes || [],
+              });
+              console.log('已自动迁移旧版持仓数据（' + positions.length + ' 支）到管理员账号');
+            }
+          }
+        } catch(e) { console.log('旧数据迁移失败：' + e.message); }
+      }
+
       const token = crypto.randomBytes(32).toString('hex');
       const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const sessions = getSessions();
