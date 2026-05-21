@@ -188,6 +188,7 @@ th.sortable:hover{color:var(--text)}
   <div class="upd-bar">
     <span>行情：<span id="quoteSrc" class="offline">○ 未获取</span> · 更新：<span id="updTime">—</span></span>
     <div style="display:flex;align-items:center;gap:8px">
+      <span id="fxRateInfo" style="font-size:11px;color:var(--muted)"></span>
       <span id="snapHint" class="snap-hint" style="display:none"></span>
       <button class="btn btn-ghost btn-sm" onclick="doRefresh()">↻ 刷新行情</button>
     </div>
@@ -362,8 +363,8 @@ const FALLBACK_A = {
   '002241':13.6,'600938':16.8,'688111':298,'002848':12,'300014':15.6,
 };
 
-// ─── FX 换算（粗略，仅用于组合汇总） ───
-const FX = { CNY:1, HKD:0.92, USD:7.25 };
+// ─── FX 换算（启动时从服务器获取最新汇率） ───
+let FX = { CNY:1, HKD:0.92, USD:7.25 };
 function mktCurrency(mkt) { return mkt==='US'?'USD':mkt==='HK'?'HKD':'CNY'; }
 function toCNY(amount, mkt) { return amount * (FX[mktCurrency(mkt)] || 1); }
 function fmtAmt(amount, mkt) {
@@ -377,11 +378,36 @@ function fmtAmtCNY(amount) {
   const abs = Math.abs(amount);
   return '¥' + abs.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
+// 单行 CNY 价格（用于持仓卡片）
 function fmtPx(price, mkt) {
   if (price == null) return '—';
-  if (mkt === 'US') return '$' + price.toFixed(2);
-  if (mkt === 'HK') return 'HK$' + price.toFixed(3);
-  return '¥' + price.toFixed(3);
+  if (mkt === 'A') return '¥' + price.toFixed(3);
+  return '¥' + toCNY(price, mkt).toFixed(2);
+}
+// 双行价格：CNY 为主 + 原币小字（用于详情表格）
+function fmtPxFull(price, mkt) {
+  if (price == null) return '—';
+  if (mkt === 'A') return '¥' + price.toFixed(3);
+  const cny  = toCNY(price, mkt);
+  const orig = mkt === 'US' ? '$' + price.toFixed(2) : 'HK$' + price.toFixed(3);
+  return `¥${cny.toFixed(2)}<span style="font-size:10px;color:var(--muted);margin-left:3px">${orig}</span>`;
+}
+// 盘前/盘后价格 HTML（仅美股）
+function prePostHtml(p, forCard) {
+  if (p.mkt !== 'US' || (!p.preMarketPrice && !p.postMarketPrice)) return '';
+  const ms = p.marketState || '';
+  let price, pct, label, color;
+  if (p.preMarketPrice && (ms === 'PRE' || !p.postMarketPrice)) {
+    price = p.preMarketPrice; pct = p.preMarketChangePct; label = '盘前'; color = '#f0ad4e';
+  } else {
+    price = p.postMarketPrice; pct = p.postMarketChangePct; label = '盘后'; color = 'var(--purple)';
+  }
+  const cnyStr = '≈¥' + toCNY(price, 'US').toFixed(2);
+  const sign   = (pct || 0) >= 0 ? '+' : '';
+  const txt    = `${label} $${price.toFixed(2)}${cnyStr} (${sign}${(pct||0).toFixed(2)}%)`;
+  return forCard
+    ? `<div style="font-size:10px;color:${color}">${txt}</div>`
+    : `<br><span style="font-size:10px;color:${color}">${txt}</span>`;
 }
 
 // ─── 状态 ───
@@ -484,7 +510,14 @@ async function fetchServerPrices(symbols) {
     const res = {};
     Object.entries(data).forEach(([sym, d]) => {
       if (d && d.price) {
-        res[sym] = { price: d.price, prev: d.prev||d.price, chg: +(d.changePct||0).toFixed(2), src:'live', currency:d.currency };
+        res[sym] = {
+          price: d.price, prev: d.prev||d.price, chg: +(d.changePct||0).toFixed(2), src:'live', currency: d.currency,
+          marketState:     d.marketState     || 'REGULAR',
+          preMarketPrice:  d.preMarketPrice  || null,
+          preMarketChangePct: d.preMarketChangePct || null,
+          postMarketPrice: d.postMarketPrice || null,
+          postMarketChangePct: d.postMarketChangePct || null,
+        };
       }
     });
     return res;
@@ -747,7 +780,7 @@ function renderGrid(enriched, totalValCNY, period) {
     const cls = pct>0?'pos':pct<0?'neg':'flat';
     const tC = themeColor(p.theme||'其他'), tB = themeBg(tC);
     const pctStr = pct!==null?(pSign(pct)+pct.toFixed(2)+'%'):'—';
-    const pnlStr = ret.pnl!=null?((ret.pnl>=0?'+':'-')+fmtAmt(Math.abs(ret.pnl),p.mkt)):'';
+    const pnlStr = ret.pnl!=null?((ret.pnl>=0?'+':'-')+fmtAmtCNY(toCNY(Math.abs(ret.pnl||0),p.mkt))):'';
     const dot = p.src==='live'?`<span style="color:var(--green);font-size:8px">●</span>`:`<span style="color:var(--muted);font-size:8px">○</span>`;
     const barW = maxV>0?(p.valCNY/maxV*100).toFixed(1):0;
     const dayPct = p.dayRet.pct;
@@ -763,13 +796,14 @@ function renderGrid(enriched, totalValCNY, period) {
         <div class="hcard-r">
           <div class="hcard-pct ${cls}">${pctStr}${noSnapNote}</div>
           <div class="hcard-price">${fmtPx(p.price,p.mkt)} · ${pnlStr}</div>
+          ${prePostHtml(p, true)}
           ${period!=='day'&&dayPct!=null?`<div class="hcard-day ${dayCls}">今日 ${pSign(dayPct)+dayPct.toFixed(2)}%${usYest?' <span style="color:var(--muted);font-size:9px">(昨)</span>':''}</div>`:''}
         </div>
       </div>
       <div class="hbar-wrap"><div class="hbar" style="width:${barW}%"></div></div>
       <div class="hcard-bot">
         <div class="hcard-detail">
-          <b>${p.shares.toLocaleString()}</b>股 · 成本<b>${fmtPx(p.avgCost,p.mkt)}</b> · 市值<b>${fmtAmt(p.val,p.mkt)}</b>${p.note?`<br>${p.note}`:''}
+          <b>${p.shares.toLocaleString()}</b>股 · 成本<b>${fmtPx(p.avgCost,p.mkt)}</b> · 市值<b>${fmtAmtCNY(p.valCNY)}</b>${p.note?`<br>${p.note}`:''}
         </div>
         <div class="hcard-acts">
           <button class="btn btn-ghost btn-sm" onclick="openEdit('${p.id}')">编辑</button>
@@ -819,7 +853,7 @@ function renderTable(enriched, totalValCNY, period) {
     const wtPct=totalValCNY>0?(p.valCNY/totalValCNY*100).toFixed(1):'0.0';
     const dot=p.src==='live'?`<span style="color:var(--green);font-size:9px">●</span>`:`<span style="color:var(--muted);font-size:9px">○</span>`;
     const ret=p.ret;
-    const pnlStr=ret.pnl!=null?((ret.pnl>=0?'+':'-')+fmtAmt(Math.abs(ret.pnl),p.mkt)):'—';
+    const pnlStr=ret.pnl!=null?((ret.pnl>=0?'+':'-')+fmtAmtCNY(toCNY(Math.abs(ret.pnl||0),p.mkt))):'—';
     const dayPct=p.dayRet.pct;
     const dayCls=dayPct>=0?'chg-p':'chg-n';
     const yestTag = p.mkt==='US'&&!usOpen ? '<span style="color:var(--muted);font-size:9px"> (昨)</span>' : '';
@@ -830,8 +864,8 @@ function renderTable(enriched, totalValCNY, period) {
       <td><span class="mktag mktag-${p.mkt}">${MKT_LBL[p.mkt]||p.mkt}</span></td>
       <td><span class="ttag" style="color:${tC};background:${tB}">${p.theme||'—'}</span></td>
       <td>${p.shares.toLocaleString()}</td>
-      <td>${fmtPx(p.avgCost,p.mkt)}</td>
-      <td>${fmtPx(p.price,p.mkt)} ${dot}</td>
+      <td>${fmtPxFull(p.avgCost,p.mkt)}</td>
+      <td>${fmtPxFull(p.price,p.mkt)} ${dot}${prePostHtml(p, false)}</td>
       <td class="${ret.pnl>=0?'chg-p':'chg-n'}">${pnlStr}</td>
       <td class="${ret.pct>=0?'chg-p':'chg-n'}">${ret.pct!=null?(pSign(ret.pct)+ret.pct.toFixed(2)+'%'+(ret.noSnap?' ≈':'')):'—'}</td>
       <td class="${dayCls}">${dayPct!=null?pSign(dayPct)+dayPct.toFixed(2)+'%'+yestTag:'—'}</td>
@@ -1115,17 +1149,32 @@ async function doDelete(){
   render();
 }
 
+// ─── 汇率 ───
+async function loadExchangeRate() {
+  try {
+    const r = await fetch('/api/exchange-rate', { cache: 'no-store' });
+    const d = await r.json();
+    if (d.USD > 1)   FX.USD = d.USD;
+    if (d.HKD > 0.1) FX.HKD = d.HKD;
+    const el = document.getElementById('fxRateInfo');
+    if (el) el.textContent = `USD/CNY ${FX.USD.toFixed(4)} · HKD/CNY ${FX.HKD.toFixed(4)}`;
+  } catch(e) {}
+}
+
 // ─── 初始化 ───
 async function init(){
   progress(20);
   await loadFromServer();
+  progress(40);
+  await loadExchangeRate();
   progress(60);
   render();
   await doRefresh();
   progress(100);
 }
 init();
-setInterval(doRefresh,10*60*1000);
+setInterval(doRefresh, 10*60*1000);
+setInterval(loadExchangeRate, 4*60*60*1000);
 </script>
 </body>
 </html>

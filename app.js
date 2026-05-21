@@ -101,12 +101,64 @@ function fetchOnePrice(symbol) {
   });
 }
 
+// Yahoo Finance v7 批量报价（含盘前/盘后数据）
+function fetchQuotesBulk(symbols) {
+  return new Promise(function(resolve) {
+    const reqUrl = 'https://query2.finance.yahoo.com/v7/finance/quote?symbols=' + symbols.join(',');
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+      timeout: 12000,
+    };
+    const req = https.get(reqUrl, options, function(res) {
+      let buf = '';
+      res.on('data', function(d) { buf += d; });
+      res.on('end', function() {
+        try {
+          const data = JSON.parse(buf);
+          const results = data && data.quoteResponse && data.quoteResponse.result;
+          if (!results || !results.length) return resolve(null);
+          const map = {};
+          results.forEach(function(r) {
+            const price = r.regularMarketPrice;
+            const prev  = r.regularMarketPreviousClose || price;
+            map[r.symbol] = {
+              price, prev,
+              change:    r.regularMarketChange    || (price - prev),
+              changePct: r.regularMarketChangePercent || (prev ? (price-prev)/prev*100 : 0),
+              currency:  r.currency || 'USD',
+              name:      r.longName || r.shortName || r.symbol,
+              marketState:      r.marketState      || 'REGULAR',
+              preMarketPrice:   r.preMarketPrice   || null,
+              preMarketChange:  r.preMarketChange  || null,
+              preMarketChangePct: r.preMarketChangePercent || null,
+              postMarketPrice:  r.postMarketPrice  || null,
+              postMarketChange: r.postMarketChange || null,
+              postMarketChangePct: r.postMarketChangePercent || null,
+              error: null,
+            };
+          });
+          resolve(map);
+        } catch(e) { resolve(null); }
+      });
+    });
+    req.on('error', function() { resolve(null); });
+    req.on('timeout', function() { req.destroy(); resolve(null); });
+  });
+}
+
 function fetchPrices(symbols) {
   if (!symbols.length) return Promise.resolve({});
-  return Promise.all(symbols.map(fetchOnePrice)).then(function(results) {
-    const map = {};
-    symbols.forEach(function(sym, i) { map[sym] = results[i]; });
-    return map;
+  return fetchQuotesBulk(symbols).then(function(bulkResult) {
+    if (bulkResult) return bulkResult;
+    // v7 失败时回退到逐个 v8 请求
+    return Promise.all(symbols.map(fetchOnePrice)).then(function(results) {
+      const map = {};
+      symbols.forEach(function(sym, i) { map[sym] = results[i]; });
+      return map;
+    });
   });
 }
 
@@ -181,6 +233,25 @@ const server = http.createServer(async function(req, res) {
     const result = await fetchPrices(syms);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(result));
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/exchange-rate') {
+    try {
+      const [usdRes, hkdRes] = await Promise.all([
+        fetchOnePrice('USDCNY=X'),
+        fetchOnePrice('HKDCNY=X'),
+      ]);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        USD: (usdRes.price > 1)   ? +usdRes.price.toFixed(4) : 7.25,
+        HKD: (hkdRes.price > 0.1) ? +hkdRes.price.toFixed(4) : 0.93,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch(e) {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ USD: 7.25, HKD: 0.93, updatedAt: null }));
+    }
     return;
   }
 
