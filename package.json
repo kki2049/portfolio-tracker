@@ -9,7 +9,4 @@
   "engines": {
     "node": ">=16"
   },
-  "dependencies": {
-    "pg": "^8.11.3"
-  }
 }
