@@ -1173,35 +1173,44 @@ async function fetchAndFill(code, market) {
   setFillLoading(true);
   try {
     if (market === 'A') {
-      // 名称：直接在浏览器端调腾讯行情（不经服务器，中国网络直连）
+      // A股名称：腾讯行情，用 GBK 解码避免乱码
       try {
         const sym = toTxSym(code);
         const r = await fetch('https://qt.gtimg.cn/q=' + sym, {cache:'no-store'});
-        const txt = await r.text();
+        const buf = await r.arrayBuffer();
+        const txt = new TextDecoder('gbk').decode(buf);
         const m = txt.match(/v_[a-z]{2}\d+="([^"]+)"/);
         if (m) {
           const parts = m[1].split('~');
           const name = parts[1];
-          if (name && name !== code) {
-            nameEl.value = name;
-            nameEl.dataset.auto = '1';
-          }
+          if (name && name !== code) { nameEl.value = name; nameEl.dataset.auto = '1'; }
         }
       } catch {}
-      // 行业：服务器端 Yahoo Finance
+      // 行业：Yahoo Finance（可能较慢，忽略失败）
       if (!themeEl.value) {
         try {
           const r = await authFetch('/api/stock-info?code='+encodeURIComponent(code)+'&market=A');
           const d = await r.json();
-          if (d.industry && !themeEl.value) themeEl.value = d.industry;
+          if (d.industry) themeEl.value = d.industry;
         } catch {}
       }
     } else {
-      // 港股/美股：服务器端 Yahoo Finance
-      const r = await authFetch('/api/stock-info?code='+encodeURIComponent(code)+'&market='+market);
-      const d = await r.json();
-      if (d.name && !nameEl.value) nameEl.value = d.name;
-      if (d.industry && !themeEl.value) themeEl.value = d.industry;
+      // 港股/美股：先从行情接口取名字（最可靠），再尝试 stock-info 取行业
+      try {
+        const sym = market === 'HK' ? code.padStart(4,'0') + '.HK' : code.toUpperCase();
+        const r = await authFetch('/api/prices?symbols=' + encodeURIComponent(sym));
+        const d = await r.json();
+        const info = d[sym];
+        if (info && info.name && !nameEl.value) { nameEl.value = info.name; nameEl.dataset.auto = '1'; }
+      } catch {}
+      if (!themeEl.value) {
+        try {
+          const r = await authFetch('/api/stock-info?code='+encodeURIComponent(code)+'&market='+market);
+          const d = await r.json();
+          if (d.name && !nameEl.value) nameEl.value = d.name;
+          if (d.industry) themeEl.value = d.industry;
+        } catch {}
+      }
     }
   } catch {}
   setFillLoading(false);
