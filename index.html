@@ -169,8 +169,8 @@ input[list]{cursor:text}
   </div>
   <div class="hd-right">
     <div class="period-tabs">
-      <button class="ptab" onclick="setPeriod('day',this)">今日</button>
       <button class="ptab active" onclick="setPeriod('hold',this)">持有</button>
+      <button class="ptab" onclick="setPeriod('day',this)">今日</button>
       <button class="ptab" onclick="setPeriod('month',this)">本月</button>
       <button class="ptab" onclick="setPeriod('year',this)">本年</button>
     </div>
@@ -752,7 +752,9 @@ function renderGrid(enriched, totalValCNY, period) {
       </div>
       <div class="hbar-wrap"><div class="hbar" style="width:${barW}%"></div></div>
       <div class="hcard-bot">
-        <div class="hcard-detail"><b>${p.shares.toLocaleString()}</b>股 · 成本<b>${fmtPx(p.avgCost,p.mkt)}</b>${p.note?` · ${p.note}`:''}</div>
+        <div class="hcard-detail">
+          <b>${p.shares.toLocaleString()}</b>股 · 成本<b>${fmtPx(p.avgCost,p.mkt)}</b> · 市值<b>${fmtAmt(p.val,p.mkt)}</b>${p.note?`<br>${p.note}`:''}
+        </div>
         <div class="hcard-acts">
           <button class="btn btn-ghost btn-sm" onclick="openEdit('${p.id}')">编辑</button>
           <button class="btn btn-del btn-sm" onclick="askDel('${p.id}')">删</button>
@@ -775,7 +777,7 @@ function renderTable(enriched, totalValCNY, period) {
     const dot=p.src==='live'?`<span style="color:var(--green);font-size:9px">●</span>`:`<span style="color:var(--muted);font-size:9px">○</span>`;
     const ret=p.ret;
     const pnlStr=ret.pnl!=null?((ret.pnl>=0?'+':'-')+fmtAmt(Math.abs(ret.pnl),p.mkt)):'—';
-    const pctStr=ret.pct!=null?(pSign(ret.pct)+ret.pct.toFixed(2)+'%')+'(ret.noSnap?" ≈":'')':'—';
+    const pctStr=ret.pct!=null?(pSign(ret.pct)+ret.pct.toFixed(2)+'%'+(ret.noSnap?' ≈':'')):'—';
     const dayPct=p.dayRet.pct;
     const dayCls=dayPct>=0?'chg-p':'chg-n';
     return `<tr>
