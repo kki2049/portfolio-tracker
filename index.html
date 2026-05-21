@@ -147,20 +147,10 @@ input[list]{cursor:text}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#21262d;border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-size:13px;z-index:9999;transition:transform .25s;pointer-events:none}
 .toast.show{transform:translateX(-50%) translateY(0)}
 
-/* OCR modal */
-.ocr-drop{border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:.15s;margin-bottom:12px}
-.ocr-drop:hover,.ocr-drop.drag{border-color:var(--blue);background:rgba(88,166,255,.05)}
-.ocr-drop-text{font-size:12px;color:var(--muted)}
-.ocr-preview{max-width:100%;max-height:160px;margin-top:8px;border-radius:6px;display:none}
-.ocr-status{font-size:12px;margin-bottom:8px;padding:6px 10px;border-radius:6px;display:none}
-.ocr-status.loading{background:rgba(88,166,255,.1);color:var(--blue)}
-.ocr-status.error{background:rgba(248,81,73,.1);color:var(--red)}
-.ocr-row{display:grid;grid-template-columns:80px 1fr 80px 80px 58px 26px;gap:4px;margin-bottom:4px;align-items:center}
-.ocr-row input,.ocr-row select{padding:4px 6px;font-size:12px;height:28px}
-.ocr-hint{font-size:11px;color:var(--muted);display:grid;grid-template-columns:80px 1fr 80px 80px 58px 26px;gap:4px;margin-bottom:4px;padding:0 2px}
-.auto-badge{font-size:9px;color:var(--blue);margin-left:3px;vertical-align:middle}
 .fill-loading{font-size:10px;color:var(--muted);animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--text)}
 
 @media(max-width:680px){
   .chart-row{grid-template-columns:1fr}
@@ -190,7 +180,6 @@ input[list]{cursor:text}
       <button class="ptab" onclick="setPeriod('year',this)">本年</button>
     </div>
     <button class="btn btn-snap" onclick="saveSnapshot()">📌 存快照</button>
-    <button class="btn btn-ghost" onclick="openOcr()">📷 截图导入</button>
     <button class="btn btn-primary" onclick="openAdd()">+ 添加持仓</button>
   </div>
 </div>
@@ -238,10 +227,18 @@ input[list]{cursor:text}
     <table>
       <thead>
         <tr>
-          <th>#</th><th>名称</th><th>代码</th><th>市场</th><th>题材</th>
-          <th>持股</th><th>成本</th><th>现价</th>
-          <th id="th-pnl">浮盈亏</th><th id="th-pct">收益率</th>
-          <th>今日</th><th>占比</th><th>操作</th>
+          <th>#</th>
+          <th class="sortable" onclick="sortBy('name')">名称<span id="sort-name"></span></th>
+          <th class="sortable" onclick="sortBy('code')">代码<span id="sort-code"></span></th>
+          <th>市场</th><th>题材</th>
+          <th class="sortable" onclick="sortBy('shares')">持股<span id="sort-shares"></span></th>
+          <th class="sortable" onclick="sortBy('cost')">成本<span id="sort-cost"></span></th>
+          <th class="sortable" onclick="sortBy('price')">现价<span id="sort-price"></span></th>
+          <th id="th-pnl" class="sortable" onclick="sortBy('pnl')">浮盈亏<span id="sort-pnl"></span></th>
+          <th id="th-pct" class="sortable" onclick="sortBy('pct')">收益率<span id="sort-pct"></span></th>
+          <th class="sortable" onclick="sortBy('day')">今日<span id="sort-day"></span></th>
+          <th class="sortable" onclick="sortBy('wt')">占比<span id="sort-wt"></span></th>
+          <th>操作</th>
         </tr>
       </thead>
       <tbody id="tblBody"></tbody>
@@ -308,32 +305,6 @@ input[list]{cursor:text}
     <div class="mbtns">
       <button class="btn btn-ghost" onclick="closeDelModal()">取消</button>
       <button class="btn btn-del" onclick="doDelete()">删除</button>
-    </div>
-  </div>
-</div>
-
-<!-- OCR import modal -->
-<div class="overlay" id="ocrOverlay">
-  <div class="modal" style="max-width:560px">
-    <h2>📷 截图导入持仓</h2>
-    <div class="modal-sub">上传券商持仓截图，AI 自动识别股票信息（需配置 ANTHROPIC_API_KEY）</div>
-    <div class="ocr-drop" id="ocrDrop" onclick="document.getElementById('ocrFile').click()"
-         ondragover="event.preventDefault();this.classList.add('drag')"
-         ondragleave="this.classList.remove('drag')"
-         ondrop="ocrHandleDrop(event)">
-      <div class="ocr-drop-text" id="ocrDropText">点击选择截图，或拖拽到此处</div>
-      <img id="ocrPreview" class="ocr-preview"/>
-    </div>
-    <input type="file" id="ocrFile" accept="image/*" style="display:none" onchange="ocrHandleFile(this)"/>
-    <div class="ocr-status" id="ocrStatus"></div>
-    <div id="ocrResultsWrap" style="display:none">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">识别结果（可修改后导入）</div>
-      <div class="ocr-hint"><span>代码</span><span>名称</span><span>持股数</span><span>成本价</span><span>市场</span><span></span></div>
-      <div id="ocrRows"></div>
-    </div>
-    <div class="mbtns" style="margin-top:14px">
-      <button class="btn btn-ghost" onclick="closeOcr()">取消</button>
-      <button class="btn btn-primary" id="ocrImportBtn" style="display:none" onclick="ocrImport()">全部导入</button>
     </div>
   </div>
 </div>
@@ -424,6 +395,8 @@ let editingId = null;
 let deletingId = null;
 let modalMkt = 'A';
 let charts = {};
+let sortCol = null;
+let sortDir = -1;
 
 // ─── 工具 ───
 function todayYM() {
@@ -689,8 +662,8 @@ function render() {
   }
 
   // table headers
-  document.getElementById('th-pnl').textContent = PERIOD_LABEL[period] + '盈亏';
-  document.getElementById('th-pct').textContent = PERIOD_LABEL[period] + '收益率';
+  document.getElementById('th-pnl').innerHTML = PERIOD_LABEL[period] + '盈亏<span id="sort-pnl"></span>';
+  document.getElementById('th-pct').innerHTML = PERIOD_LABEL[period] + '收益率<span id="sort-pct"></span>';
   document.getElementById('pnlChartSub').textContent = '各股' + PERIOD_LABEL[period] + '收益率（%）';
   document.getElementById('tblTitle').textContent = '持仓明细 · ' + PERIOD_LABEL[period] + '视图';
 
@@ -738,10 +711,10 @@ function renderMktBar(enriched) {
   const LBL = {all:'全部市场',A:'A股',HK:'港股',US:'美股'};
   document.getElementById('mktBar').innerHTML = mkts.map(m => {
     const cnt = m==='all'?enriched.length:enriched.filter(p=>p.mkt===m).length;
-    return `<button class="fpill fpill-mkt${activeMkt===m?' active':''}" onclick="setMkt('${m}')">${LBL[m]||m} (${cnt})</button>`;
+    return `<button class="fpill fpill-mkt${activeMkt===m?' active':''}" onclick="setActiveMkt('${m}')">${LBL[m]||m} (${cnt})</button>`;
   }).join('');
 }
-function setMkt(m) { activeMkt=m; render(); }
+function setActiveMkt(m) { activeMkt=m; render(); }
 
 function renderThemeBar(enriched) {
   const base = activeMkt==='all'?enriched:enriched.filter(p=>p.mkt===activeMkt);
@@ -780,6 +753,7 @@ function renderGrid(enriched, totalValCNY, period) {
     const dayPct = p.dayRet.pct;
     const dayCls = dayPct>=0?'chg-p':'chg-n';
     const noSnapNote = ret.noSnap?`<span class="no-snap-note"> ≈持有</span>`:'';
+    const usYest = p.mkt==='US' && !isUSMarketOpen();
     return `<div class="hcard ${cls}">
       <div class="hcard-top">
         <div>
@@ -789,7 +763,7 @@ function renderGrid(enriched, totalValCNY, period) {
         <div class="hcard-r">
           <div class="hcard-pct ${cls}">${pctStr}${noSnapNote}</div>
           <div class="hcard-price">${fmtPx(p.price,p.mkt)} · ${pnlStr}</div>
-          ${period!=='day'&&dayPct!=null?`<div class="hcard-day ${dayCls}">今日 ${pSign(dayPct)+dayPct.toFixed(2)}%</div>`:''}
+          ${period!=='day'&&dayPct!=null?`<div class="hcard-day ${dayCls}">今日 ${pSign(dayPct)+dayPct.toFixed(2)}%${usYest?' <span style="color:var(--muted);font-size:9px">(昨)</span>':''}</div>`:''}
         </div>
       </div>
       <div class="hbar-wrap"><div class="hbar" style="width:${barW}%"></div></div>
@@ -810,18 +784,45 @@ function renderTable(enriched, totalValCNY, period) {
   let list = enriched;
   if (activeMkt!=='all') list=list.filter(p=>p.mkt===activeMkt);
   if (activeTheme!=='all') list=list.filter(p=>p.theme===activeTheme);
+
+  // sort
+  if (sortCol) {
+    const getV = p => {
+      switch(sortCol) {
+        case 'name':   return p.name||'';
+        case 'code':   return p.code||'';
+        case 'shares': return p.shares||0;
+        case 'cost':   return p.avgCost||0;
+        case 'price':  return p.price||0;
+        case 'pnl':    return p.ret.pnl||0;
+        case 'pct':    return p.ret.pct||0;
+        case 'day':    return p.dayRet.pct||0;
+        case 'wt':     return p.valCNY||0;
+        default:       return 0;
+      }
+    };
+    list = [...list].sort((a,b)=>{ const va=getV(a),vb=getV(b); return va<vb?-sortDir:va>vb?sortDir:0; });
+  }
+
+  // update sort indicators
+  ['name','code','shares','cost','price','pnl','pct','day','wt'].forEach(col=>{
+    const el=document.getElementById('sort-'+col);
+    if(el) el.textContent = sortCol===col?(sortDir>0?' ↑':' ↓'):'';
+  });
+
   const tb = document.getElementById('tblBody');
   if (!list.length) { tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:20px">无持仓数据</td></tr>'; return; }
   const MKT_LBL={A:'A股',HK:'港股',US:'美股'};
+  const usOpen = isUSMarketOpen();
   tb.innerHTML = list.map((p,i)=>{
     const tC=themeColor(p.theme||'其他'),tB=themeBg(tC);
     const wtPct=totalValCNY>0?(p.valCNY/totalValCNY*100).toFixed(1):'0.0';
     const dot=p.src==='live'?`<span style="color:var(--green);font-size:9px">●</span>`:`<span style="color:var(--muted);font-size:9px">○</span>`;
     const ret=p.ret;
     const pnlStr=ret.pnl!=null?((ret.pnl>=0?'+':'-')+fmtAmt(Math.abs(ret.pnl),p.mkt)):'—';
-    const pctStr=ret.pct!=null?(pSign(ret.pct)+ret.pct.toFixed(2)+'%'+(ret.noSnap?' ≈':'')):'—';
     const dayPct=p.dayRet.pct;
     const dayCls=dayPct>=0?'chg-p':'chg-n';
+    const yestTag = p.mkt==='US'&&!usOpen ? '<span style="color:var(--muted);font-size:9px"> (昨)</span>' : '';
     return `<tr>
       <td style="color:var(--muted)">${i+1}</td>
       <td><b>${p.name}</b>${p.note?`<br><span style="font-size:10px;color:var(--muted)">${p.note}</span>`:''}</td>
@@ -833,7 +834,7 @@ function renderTable(enriched, totalValCNY, period) {
       <td>${fmtPx(p.price,p.mkt)} ${dot}</td>
       <td class="${ret.pnl>=0?'chg-p':'chg-n'}">${pnlStr}</td>
       <td class="${ret.pct>=0?'chg-p':'chg-n'}">${ret.pct!=null?(pSign(ret.pct)+ret.pct.toFixed(2)+'%'+(ret.noSnap?' ≈':'')):'—'}</td>
-      <td class="${dayCls}">${dayPct!=null?pSign(dayPct)+dayPct.toFixed(2)+'%':'—'}</td>
+      <td class="${dayCls}">${dayPct!=null?pSign(dayPct)+dayPct.toFixed(2)+'%'+yestTag:'—'}</td>
       <td style="color:var(--muted)">${wtPct}%</td>
       <td style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="openEdit('${p.id}')">编辑</button>
@@ -995,126 +996,23 @@ async function fetchAndFill(code, market) {
   setFillLoading(false);
 }
 
-// ─── OCR 截图导入 ───
-let _ocrRows = [];
-
-function openOcr() {
-  _ocrRows = [];
-  document.getElementById('ocrFile').value = '';
-  document.getElementById('ocrPreview').style.display = 'none';
-  document.getElementById('ocrDropText').textContent = '点击选择截图，或拖拽到此处';
-  document.getElementById('ocrStatus').style.display = 'none';
-  document.getElementById('ocrResultsWrap').style.display = 'none';
-  document.getElementById('ocrImportBtn').style.display = 'none';
-  document.getElementById('ocrOverlay').classList.add('show');
-}
-function closeOcr() { document.getElementById('ocrOverlay').classList.remove('show'); }
-
-function ocrHandleDrop(e) {
-  e.preventDefault();
-  document.getElementById('ocrDrop').classList.remove('drag');
-  const file = e.dataTransfer.files[0];
-  if (file) processOcrFile(file);
-}
-function ocrHandleFile(input) {
-  const file = input.files[0];
-  if (file) processOcrFile(file);
+// ─── 表格排序 ───
+function sortBy(col) {
+  if (sortCol === col) sortDir = -sortDir;
+  else { sortCol = col; sortDir = -1; }
+  render();
 }
 
-function processOcrFile(file) {
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const dataUrl = e.target.result;
-    const preview = document.getElementById('ocrPreview');
-    preview.src = dataUrl; preview.style.display = 'block';
-    document.getElementById('ocrDropText').textContent = file.name;
-
-    const status = document.getElementById('ocrStatus');
-    status.className = 'ocr-status loading';
-    status.textContent = '🔍 AI 识别中，请稍候…';
-    status.style.display = 'block';
-    document.getElementById('ocrResultsWrap').style.display = 'none';
-    document.getElementById('ocrImportBtn').style.display = 'none';
-
-    // base64 without data URL prefix
-    const base64 = dataUrl.split(',')[1];
-    const mediaType = file.type || 'image/jpeg';
-    try {
-      const r = await fetch('/api/parse-screenshot', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ image: base64, mediaType })
-      });
-      const d = await r.json();
-      if (d.error) {
-        status.className = 'ocr-status error';
-        status.textContent = '❌ ' + d.error;
-        return;
-      }
-      status.style.display = 'none';
-      renderOcrRows(d.positions || []);
-    } catch(err) {
-      status.className = 'ocr-status error';
-      status.textContent = '❌ 请求失败：' + err.message;
-    }
-  };
-  reader.readAsDataURL(file);
-}
-
-function renderOcrRows(positions) {
-  if (!positions.length) {
-    const status = document.getElementById('ocrStatus');
-    status.className = 'ocr-status error';
-    status.textContent = '未识别到持仓数据，请尝试更清晰的截图';
-    status.style.display = 'block';
-    return;
-  }
-  _ocrRows = positions.map((p, i) => ({ ...p, _rid: 'r' + i }));
-  document.getElementById('ocrRows').innerHTML = _ocrRows.map(p => `
-    <div class="ocr-row" id="ocr-${p._rid}">
-      <input value="${p.code||''}" placeholder="代码" onchange="_ocrRows.find(x=>x._rid==='${p._rid}').code=this.value"/>
-      <input value="${escHtml(p.name||'')}" placeholder="名称" onchange="_ocrRows.find(x=>x._rid==='${p._rid}').name=this.value"/>
-      <input type="number" value="${p.shares||''}" placeholder="股数" onchange="_ocrRows.find(x=>x._rid==='${p._rid}').shares=+this.value"/>
-      <input type="number" step="0.001" value="${p.cost||''}" placeholder="成本" onchange="_ocrRows.find(x=>x._rid==='${p._rid}').cost=+this.value"/>
-      <select onchange="_ocrRows.find(x=>x._rid==='${p._rid}').market=this.value">
-        <option value="A" ${p.market==='A'?'selected':''}>A股</option>
-        <option value="HK" ${p.market==='HK'?'selected':''}>港股</option>
-        <option value="US" ${p.market==='US'?'selected':''}>美股</option>
-      </select>
-      <button class="btn btn-del btn-sm" onclick="ocrRemoveRow('${p._rid}')">×</button>
-    </div>`).join('');
-  document.getElementById('ocrResultsWrap').style.display = 'block';
-  document.getElementById('ocrImportBtn').style.display = '';
-}
-
-function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
-
-function ocrRemoveRow(rid) {
-  _ocrRows = _ocrRows.filter(x => x._rid !== rid);
-  const el = document.getElementById('ocr-' + rid);
-  if (el) el.remove();
-  if (!_ocrRows.length) document.getElementById('ocrImportBtn').style.display = 'none';
-}
-
-async function ocrImport() {
-  const valid = _ocrRows.filter(p => p.code && p.name && p.shares > 0 && p.cost > 0);
-  if (!valid.length) { toast('请补全代码、名称、股数、成本后再导入'); return; }
-  if (!portfolio.positions) portfolio.positions = [];
-  valid.forEach(p => {
-    const mkt = p.market || 'A';
-    let code = p.code;
-    if (mkt === 'HK') code = String(code).replace(/^0+/, '') || String(code);
-    else if (mkt === 'US') code = String(code).toUpperCase();
-    portfolio.positions.push({
-      id: uid(), code, name: p.name, market: mkt,
-      theme: '', shares: p.shares, avgCost: p.cost,
-      note: '', buyDate: new Date().toISOString().slice(0, 10)
-    });
-  });
-  closeOcr();
-  await saveToServer();
-  toast('已导入 ' + valid.length + ' 支持仓');
-  await doRefresh();
+// ─── 美股交易时段检测 ───
+function isUSMarketOpen() {
+  const now = new Date();
+  const day = now.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  // Approximate DST: EDT (UTC-4) March–October, EST (UTC-5) otherwise
+  const m = now.getUTCMonth();
+  const etOffset = (m >= 2 && m <= 10) ? -4 : -5;
+  const etMins = ((now.getUTCHours() + etOffset + 24) % 24) * 60 + now.getUTCMinutes();
+  return etMins >= 570 && etMins < 960; // 9:30–16:00 ET
 }
 
 // ─── 添加/编辑 ───
